@@ -9,14 +9,22 @@ use ratatui::{
     DefaultTerminal, Frame,
 };
 
+pub struct Config {
+    pub is_horizontal: bool,
+}
+
 pub struct App {
     should_exit: bool,
+    config: Config,
 }
 
 impl App {
     pub fn new() -> Self {
         Self {
             should_exit: false,
+            config: Config {
+                is_horizontal: false
+            }
         }
     }
 
@@ -30,13 +38,16 @@ impl App {
 
     fn handle_events(&mut self) -> Result<()> {
         if let Event::Key(key) = event::read()? {
-            if key.kind == KeyEventKind::Press && key.code == KeyCode::Char('q') {
-                self.should_exit = true;
+            if key.kind == KeyEventKind::Press {
+                match key.code {
+                    KeyCode::Char('q') => self.should_exit = true,
+                    KeyCode::Char('r') => self.config.is_horizontal = !self.config.is_horizontal,
+                    _ => (),
+                }
             }
         }
         Ok(())
     }
-
 
     fn draw(&self, frame: &mut Frame) {
         let [title, visualiser] = Layout::vertical([
@@ -48,6 +59,6 @@ impl App {
 
         let wave_data = get_wave();
         frame.render_widget("BEEP BOOP".bold().into_centered_line(), title);
-        frame.render_widget(get_visualiser(&wave_data), visualiser);
+        frame.render_widget(get_visualiser(&self.config, &wave_data), visualiser);
     }
 }

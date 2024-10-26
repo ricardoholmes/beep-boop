@@ -5,17 +5,23 @@ use ratatui::{
     widgets::{Bar, BarChart, BarGroup, Widget}
 };
 
+use crate::app::Config;
+
 pub fn get_wave() -> Vec::<u8> {
     let mut rng = thread_rng();
     (0..24).map(|_| rng.gen_range(50..90)).collect()
 }
 
-pub fn get_visualiser(wave: &[u8]) -> impl Widget + '_ {
-    vertical_bars(wave)
+pub fn get_visualiser<'a>(config: &'a Config, wave: &'a [u8]) -> impl Widget + 'a  {
+    if config.is_horizontal {
+        horizontal_barchart(wave)
+    } else {
+        vertical_barchart(wave)
+    }
 }
 
 /// Create a vertical bar chart from the wave data.
-fn vertical_bars(wave: &[u8]) -> BarChart {
+fn vertical_barchart(wave: &[u8]) -> BarChart {
     let bars: Vec<Bar> = wave
         .iter()
         .map(|amplitude| vertical_bar(amplitude))
@@ -55,7 +61,7 @@ fn horizontal_bar(amplitude: &u8) -> Bar {
         .text_value(String::new())
 }
 
-fn amplitude_style(value: u8) -> Style {
+fn amplitude_style(_value: u8) -> Style {
     let color = Color::Rgb(66, 134, 189);
     Style::new().fg(color)
 }

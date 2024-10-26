@@ -1,13 +1,19 @@
+mod app;
+mod audio_visualiser;
+
 use std::io::{BufRead, Write};
 use std::io;
 
+use audioviz::spectrum::config::ProcessorConfig;
 use cpal::SampleFormat;
-use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use cpal::traits::{DeviceTrait, HostTrait};
 
 use ringbuf::{
     traits::{Consumer, Producer, Split},
     HeapRb,
 };
+
+use audioviz::spectrum;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let host = cpal::default_host();
@@ -24,7 +30,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let input_device = host.input_devices().expect("no input device available").skip(device_id).next().unwrap();
 
-    println!("Input device: {}", input_device.name().unwrap());
+    println!("\nInput device: {}", input_device.name().unwrap());
 
     // Configuration of audio STREAM
     let mut supported_configs_range = input_device.supported_input_configs()
@@ -57,7 +63,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let input_data_fn = move |data: &[f32], _: &cpal::InputCallbackInfo| {
         let mut output_fell_behind = false;
         for &sample in data {
-            println!("sample: {}", sample);
+            // println!("sample: {}", sample);
             if producer.try_push(sample).is_err() {
                 output_fell_behind = true;
             }
@@ -67,41 +73,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
-    let output_data_fn = move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
-        let mut input_fell_behind = false;
-        for sample in data {
-            *sample = match consumer.try_pop() {
-                Some(s) => s,
-                None => {
-                    input_fell_behind = true;
-                    0.0
-                }
-            };
-        }
-        if input_fell_behind {
-            eprintln!("input stream fell behind: try increasing latency");
-        }
-    };
-
-
     // Build streams.
     println!(
         "Attempting to build both streams with f32 samples and `{:?}`.",
         config
     );
     let input_stream = input_device.build_input_stream(&config, input_data_fn, err_fn, None)?;
-    println!("Successfully built streams.");
 
-    // Play the streams.
-    println!(
-        "Starting the input and output streams with `{}` milliseconds of latency.",
-        1000.0
-    );
-    input_stream.play()?;
-
-    // Run for 3 seconds before closing.
-    println!("Playing for 3 seconds... ");
     std::thread::sleep(std::time::Duration::from_secs(3));
+
+    let mut viz_config = ProcessorConfig::default();
+    viz_config.sampling_rate = config.sample_rate.0;
+
+    let mut processor = spectrum::processor::Processor::from_raw_data(viz_config, consumer.into_iter().collect());
+    processor.raw_to_freq_buffer();
+
     drop(input_stream);
     println!("Done!");
     Ok(())

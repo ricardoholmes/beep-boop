@@ -1,7 +1,12 @@
 use cpal::{Data, Sample, SampleFormat, FromSample};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 
-fn main() {
+use ringbuf::{
+    traits::{Consumer, Producer, Split},
+    HeapRb,
+};
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let host = cpal::default_host();
     let input_device = host.default_input_device().expect("no input device available");
     let output_device = host.default_output_device().expect("no output device available");
@@ -19,36 +24,76 @@ fn main() {
     println!("Supported config.config: {:?}", supported_config.config());
 
     let err_fn = |err| eprintln!("an error occurred on the output audio stream: {}", err);
-    let sample_format = supported_config.sample_format();
-    let config = supported_config.clone().into();
+    let sample_format: SampleFormat = supported_config.sample_format();
+    let config: cpal::StreamConfig = supported_config.clone().into();
 
 
+    // Create a delay in case the input and output devices aren't synced.
+    let latency_frames = (5000.0 / 1_000.0) * config.sample_rate.0 as f32;
+    let latency_samples = latency_frames as usize * config.channels as usize;
+    // The buffer to share samples
+    let ring = HeapRb::<f32>::new(latency_samples * 2);
+    let (mut producer, mut consumer) = ring.split();
 
-    let stream: cpal::Stream = match sample_format {
-        SampleFormat::F32 => input_device.build_input_stream(
-            &config,
-            move |data: &[f32], _: &cpal::InputCallbackInfo| {
-            // react to stream events and read or write stream data here.
-            // 'data' should be &Data for input streams
-                println!("EEE: {:?}", data);
-            },
-            err_fn, None),
-        SampleFormat::U8 => input_device.build_input_stream(
-            &config,
-            move |data: &[u8], _: &cpal::InputCallbackInfo| {
-                // react to stream events and read or write stream data here.
-                println!("Something happening");
-            },
-            err_fn, None),
-        sample_format => panic!("Unsupported sample format '{sample_format}'")
-    }.unwrap();
+    // Fill the samples with 0.0 equal to the length of the delay.
+    for _ in 0..latency_samples {
+        // The ring buffer has twice as much space as necessary to add latency here,
+        // so this should never fail
+        producer.try_push(0.0).unwrap();
+    }
 
-    stream.play().unwrap();
+    let input_data_fn = move |data: &[f32], _: &cpal::InputCallbackInfo| {
+        let mut output_fell_behind = false;
+        for &sample in data {
+            println!("sample: {}", sample);
+            if producer.try_push(sample).is_err() {
+                output_fell_behind = true;
+            }
+        }
+        if output_fell_behind {
+            eprintln!("output stream fell behind: try increasing latency");
+        }
+    };
+
+    let output_data_fn = move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
+        let mut input_fell_behind = false;
+        for sample in data {
+            *sample = match consumer.try_pop() {
+                Some(s) => s,
+                None => {
+                    input_fell_behind = true;
+                    0.0
+                }
+            };
+        }
+        if input_fell_behind {
+            eprintln!("input stream fell behind: try increasing latency");
+        }
+    };
+
+
+    // Build streams.
+    println!(
+        "Attempting to build both streams with f32 samples and `{:?}`.",
+        config
+    );
+    let input_stream = input_device.build_input_stream(&config, input_data_fn, err_fn, None)?;
+    let output_stream = output_device.build_output_stream(&config, output_data_fn, err_fn, None)?;
+    println!("Successfully built streams.");
+
+    // Play the streams.
+    println!(
+        "Starting the input and output streams with `{}` milliseconds of latency.",
+        1000.0
+    );
+    input_stream.play()?;
+    output_stream.play()?;
+
     // Run for 3 seconds before closing.
     println!("Playing for 3 seconds... ");
     std::thread::sleep(std::time::Duration::from_secs(3));
-    drop(stream);
+    drop(input_stream);
+    drop(output_stream);
     println!("Done!");
-
-
+    Ok(())
 }

@@ -34,7 +34,7 @@ pub struct App {
     get_buffer: Box<dyn FnMut() -> Vec<f32>>,
     processor_config: ProcessorConfig,
     config: Config,
-    frameNum: u64,
+    frame_num: u64,
 }
 
 impl App {
@@ -106,7 +106,7 @@ impl App {
             config: Config {
                 is_horizontal: false
             },
-            frameNum: 0,
+            frame_num: 0,
         }
     }
 
@@ -172,9 +172,11 @@ impl App {
             wave_data.push(data);
         }
 
-        frame.render_widget(format!("{mi} - {ma}"), stuff);
+        frame.render_widget(format!("{} | {mi} - {ma}", self.frame_num), stuff);
 
         frame.render_widget("BEEP BOOP".bold().into_centered_line(), title);
         frame.render_widget(get_visualiser(&self.config, &wave_data), visualiser);
+
+        self.frame_num += 1;
     }
 }

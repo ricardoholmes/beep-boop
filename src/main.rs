@@ -1,4 +1,7 @@
-use cpal::{Data, Sample, SampleFormat, FromSample};
+use std::io::{BufRead, Write};
+use std::io;
+
+use cpal::SampleFormat;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 
 use ringbuf::{
@@ -8,11 +11,20 @@ use ringbuf::{
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let host = cpal::default_host();
-    let input_device = host.default_input_device().expect("no input device available");
-    let output_device = host.default_output_device().expect("no output device available");
+
+    for (i, d) in host.input_devices().unwrap().enumerate() {
+        println!("{i}: {}", d.name().unwrap());
+    }
+    print!("\nDevice ID: ");
+    io::stdout().flush()?;
+
+    let mut input = String::new();
+    io::stdin().lock().read_line(&mut input)?;
+    let device_id = input.trim_end().parse().unwrap();
+
+    let input_device = host.input_devices().expect("no input device available").skip(device_id).next().unwrap();
 
     println!("Input device: {}", input_device.name().unwrap());
-    println!("Output device: {}", output_device.name().unwrap());
 
     // Configuration of audio STREAM
     let mut supported_configs_range = input_device.supported_input_configs()
@@ -78,7 +90,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         config
     );
     let input_stream = input_device.build_input_stream(&config, input_data_fn, err_fn, None)?;
-    let output_stream = output_device.build_output_stream(&config, output_data_fn, err_fn, None)?;
     println!("Successfully built streams.");
 
     // Play the streams.
@@ -87,13 +98,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         1000.0
     );
     input_stream.play()?;
-    output_stream.play()?;
 
     // Run for 3 seconds before closing.
     println!("Playing for 3 seconds... ");
     std::thread::sleep(std::time::Duration::from_secs(3));
     drop(input_stream);
-    drop(output_stream);
     println!("Done!");
     Ok(())
 }

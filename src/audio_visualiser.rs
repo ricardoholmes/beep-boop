@@ -1,4 +1,3 @@
-use audioviz::spectrum::Frequency;
 use rand::{thread_rng, Rng};
 use ratatui::{
     layout::Direction,

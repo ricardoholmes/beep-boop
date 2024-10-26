@@ -29,11 +29,12 @@ pub struct Config {
 }
 
 pub struct App {
-    input_stream: Stream,
+    _input_stream: Stream,
     should_exit: bool,
     get_buffer: Box<dyn FnMut() -> Vec<f32>>,
     processor_config: ProcessorConfig,
     config: Config,
+    frameNum: u64,
 }
 
 impl App {
@@ -98,13 +99,14 @@ impl App {
 
         let get_buffer = Box::new(get_buffer_fn);
         Self {
-            input_stream,
+            _input_stream: input_stream,
             should_exit: false,
             get_buffer,
             processor_config: viz_config,
             config: Config {
                 is_horizontal: false
-            }
+            },
+            frameNum: 0,
         }
     }
 
@@ -117,12 +119,16 @@ impl App {
     }
 
     fn handle_events(&mut self) -> Result<()> {
-        if let Event::Key(key) = event::read()? {
-            if key.kind == KeyEventKind::Press {
-                match key.code {
-                    KeyCode::Char('q') => self.should_exit = true,
-                    KeyCode::Char('r') => self.config.is_horizontal = !self.config.is_horizontal,
-                    _ => (),
+        if let Ok(x) = event::poll(Duration::ZERO) {
+            if x == true {
+                if let Event::Key(key) = event::read()? {
+                    if key.kind == KeyEventKind::Press {
+                        match key.code {
+                            KeyCode::Char('q') => self.should_exit = true,
+                            KeyCode::Char('r') => self.config.is_horizontal = !self.config.is_horizontal,
+                            _ => (),
+                        }
+                    }
                 }
             }
         }
@@ -142,6 +148,9 @@ impl App {
         let mut processor = spectrum::processor::Processor::from_raw_data(self.processor_config.clone(), buf);
         processor.raw_to_freq_buffer();
         let mut wave = processor.freq_buffer.clone();
+        if wave.is_empty() {
+            return;
+        }
         let ma = wave.iter().max_by(|x, y| x.volume.total_cmp(&y.volume)).unwrap().volume;
         let mi = wave.iter().min_by(|x, y| x.volume.total_cmp(&y.volume)).unwrap().volume;
         // println!("{ma:?}, {mi:?}");
@@ -167,7 +176,5 @@ impl App {
 
         frame.render_widget("BEEP BOOP".bold().into_centered_line(), title);
         frame.render_widget(get_visualiser(&self.config, &wave_data), visualiser);
-
-        std::thread::sleep(Duration::from_millis(100));
     }
 }

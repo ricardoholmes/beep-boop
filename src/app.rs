@@ -170,12 +170,12 @@ impl App {
         let mi = wave_data.iter().min().unwrap();
         frame.render_widget(format!("{} | {mi} <-> {ma} | {} | {} | {}", self.frame_num, buf.len(), wave_data.len(), self.start.elapsed().as_secs_f64() / total_dur.as_secs_f64()), stuff);
 
-        let current_time = format!("{}:{}", self.start.elapsed().as_secs() / 60, self.start.elapsed().as_secs() % 60);
-        let total_time = format!("{}:{}", total_dur.as_secs() / 60, total_dur.as_secs() % 60);
+        let current_time = format!("{:02}:{:02}", self.start.elapsed().as_secs() / 60, self.start.elapsed().as_secs() % 60);
+        let total_time = format!("{:02}:{:02}", total_dur.as_secs() / 60, total_dur.as_secs() % 60);
         let [progress_l, progress_m, progress_r] = Layout::horizontal([
-            Constraint::Percentage(10),
+            Constraint::Percentage(3),
             Constraint::Fill(1),
-            Constraint::Percentage(10),
+            Constraint::Percentage(3),
         ]).areas(progress_area);
         frame.render_widget(current_time.to_text().centered(), progress_l);
         frame.render_widget(total_time.to_text().centered(), progress_r);

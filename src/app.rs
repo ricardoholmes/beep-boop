@@ -3,11 +3,11 @@ use crate::{audio_visualiser, lyrics::{self, get_lyric_at_time}};
 use audio_visualiser::get_visualiser;
 use color_eyre::Result;
 use ratatui::{
-    crossterm::event::{self, Event, KeyCode, KeyEventKind}, layout::{Constraint, Layout}, style::{Style, Stylize}, symbols, text::ToText, widgets::{Block, LineGauge}, DefaultTerminal, Frame
+    crossterm::event::{self, Event, KeyCode, KeyEventKind}, layout::{Constraint, Layout}, style::{Color, Stylize}, text::ToText, widgets::Gauge, DefaultTerminal, Frame
 };
-use rodio::{Decoder, OutputStream, OutputStreamHandle, Source};
+use rodio::{Decoder, OutputStream, Source};
 
-use std::{cmp::Ordering, fs::{self, File}, io::BufReader, path::PathBuf, thread::{self, JoinHandle, Thread}, time::{Duration, Instant}};
+use std::{cmp::Ordering, fs::{self, File}, io::BufReader, path::PathBuf, thread::{self, JoinHandle}, time::{Duration, Instant}};
 
 use audioviz::spectrum::{config::ProcessorConfig, Frequency};
 
@@ -20,7 +20,7 @@ pub struct Config {
 }
 
 pub struct App {
-    audio_thread: JoinHandle<()>,
+    _audio_thread: JoinHandle<()>,
     start: Instant,
     lrc_parsed: Vec<(String, String)>,
     sound_file: PathBuf,
@@ -58,7 +58,7 @@ impl App {
         // viz_config.sampling_rate = config.sample_rate.0;
 
         Self {
-            audio_thread,
+            _audio_thread: audio_thread,
             start: Instant::now(),
             lrc_parsed,
             sound_file,
@@ -121,7 +121,7 @@ impl App {
         processor.raw_to_freq_buffer();
         let mut wave = processor.freq_buffer.clone();
 
-        let wave_data = if wave.is_empty() {
+        let mut wave_data = if wave.is_empty() {
             // self.prev_wave_data.clone().unwrap_or((0..21).map(|_| 0).collect())
             (0..21).map(|_| 0).collect()
         } else {
@@ -144,21 +144,21 @@ impl App {
                 };
                 wave_data.push(data);
             }
-
-            if let Some(old_data) = &self.prev_wave_data {
-                for i in 0..old_data.len() {
-                    wave_data[i] = match wave_data[i].cmp(&old_data[i]) {
-                        Ordering::Equal => wave_data[i],
-                        // Ordering::Less => (old_data[i].checked_sub(2).unwrap_or(0)).max(wave_data[i]),
-                        // Ordering::Greater => (old_data[i] + 2).min(wave_data[i]),
-                        Ordering::Less => old_data[i] - ((old_data[i] - wave_data[i]) / 10),
-                        Ordering::Greater => old_data[i] + ((wave_data[i] - old_data[i]) / 10),
-                    };
-                }
-            }
-            self.prev_wave_data = Some(wave_data.clone());
             wave_data
         };
+
+        if let Some(old_data) = &self.prev_wave_data {
+            for i in 0..old_data.len() {
+                wave_data[i] = match wave_data[i].cmp(&old_data[i]) {
+                    Ordering::Equal => wave_data[i],
+                    // Ordering::Less => (old_data[i].checked_sub(2).unwrap_or(0)).max(wave_data[i]),
+                    // Ordering::Greater => (old_data[i] + 2).min(wave_data[i]),
+                    Ordering::Less => old_data[i] - ((old_data[i] - wave_data[i]) / 10),
+                    Ordering::Greater => old_data[i] + ((wave_data[i] - old_data[i]) / 10),
+                };
+            }
+        }
+        self.prev_wave_data = Some(wave_data.clone());
 
         let mut x = vec![];
         for low_bound in (0..20_000).step_by(1000) {
@@ -168,7 +168,7 @@ impl App {
 
         let ma = wave_data.iter().max().unwrap();
         let mi = wave_data.iter().min().unwrap();
-        frame.render_widget(format!("{} | {mi} <-> {ma} | {} | {} | {x:?}", self.frame_num, buf.len(), wave_data.len()), stuff);
+        frame.render_widget(format!("{} | {mi} <-> {ma} | {} | {} | {}", self.frame_num, buf.len(), wave_data.len(), self.start.elapsed().as_secs_f64() / total_dur.as_secs_f64()), stuff);
 
         let current_time = format!("{}:{}", self.start.elapsed().as_secs() / 60, self.start.elapsed().as_secs() % 60);
         let total_time = format!("{}:{}", total_dur.as_secs() / 60, total_dur.as_secs() % 60);
@@ -180,10 +180,8 @@ impl App {
         frame.render_widget(current_time.to_text().centered(), progress_l);
         frame.render_widget(total_time.to_text().centered(), progress_r);
 
-        let progress_line = LineGauge::default()
-            .block(Block::bordered().title("Progress"))
-            .filled_style(Style::new().white().on_black().bold())
-            .line_set(symbols::line::THICK)
+        let progress_line = Gauge::default()
+            .gauge_style(Color::Rgb(66, 134, 189))
             .ratio((self.start.elapsed().as_secs_f64() / total_dur.as_secs_f64()).max(1.0));
         frame.render_widget(progress_line, progress_m);
 

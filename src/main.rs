@@ -3,11 +3,8 @@ mod lyrics;
 mod audio_visualiser;
 
 use app::App;
-use cpal::traits::{DeviceTrait, HostTrait};
-use rodio::{Decoder, OutputStream, Source};
-use std::{fs::File, io::{stdin, stdout, BufRead, BufReader, Write}, path::PathBuf};
 use color_eyre::Result;
-use clap::{command, Arg, ArgAction, Parser};
+use clap::Parser;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]

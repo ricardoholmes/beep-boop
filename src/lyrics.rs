@@ -42,7 +42,7 @@ pub fn get_lyric_at_time(lyrics: &Vec<(String, String)>, time: u64) -> Option<St
 }
 
 pub fn parse_lrc_file(contents: String) -> Vec<(String, String)> {
-    let mut lyrics_arr: Vec<(String, String)> = Vec::new();
+    let lyrics_arr;
 
     // Process the contents
     if let Some(start) = contents.find("[00:00.00]") {
@@ -60,9 +60,9 @@ pub fn parse_lrc_file(contents: String) -> Vec<(String, String)> {
             .collect();
 
         // Print the 2D array
-        for entry in &lyrics_arr {
-            // println!("{:?}", entry);
-        }
+        // for entry in &lyrics_arr {
+        //     // println!("{:?}", entry);
+        // }
     }
     else {
         panic!("Marker [00:00.00] not found.");

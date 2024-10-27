@@ -10,7 +10,7 @@ use ratatui::{
 };
 use ringbuf::traits::Consumer;
 
-use std::time::Duration;
+use std::{cmp::Ordering, time::Duration};
 
 use audioviz::spectrum::config::ProcessorConfig;
 use cpal::{Device, SampleFormat, Stream};
@@ -34,6 +34,7 @@ pub struct App {
     processor_config: ProcessorConfig,
     config: Config,
     frame_num: u64,
+    prev_wave_data: Option<Vec<u64>>,
 }
 
 impl App {
@@ -106,6 +107,7 @@ impl App {
                 is_horizontal: false
             },
             frame_num: 0,
+            prev_wave_data: None,
         }
     }
 
@@ -147,36 +149,49 @@ impl App {
         let mut processor = spectrum::processor::Processor::from_raw_data(self.processor_config.clone(), buf);
         processor.raw_to_freq_buffer();
         let mut wave = processor.freq_buffer.clone();
-        if wave.is_empty() {
-            return;
-        }
-        // println!("{ma:?}, {mi:?}");
-        // std::thread::sleep(Duration::from_secs(1));
-        // panic!();
 
-        wave.sort_by(|x, y| x.freq.total_cmp(&y.freq));
-        let wave = wave.iter();
-        let mut wave_data = vec![];
-        for low_bound in (0..20_0000).step_by(1000) {
-            let high_bound = low_bound + 1000;
-            let waves_in_range: Vec<u64> = wave
-                .clone()
-                .skip_while(|freq| (freq.freq as i32) < low_bound)
-                .take_while(|freq| (freq.freq as i32) < high_bound)
-                .map(|freq| freq.volume as u64)
-                .collect();
-            
-            let data: u64 = if waves_in_range.len() > 0 {
-                waves_in_range.iter().fold(0, |t, &x| t + x)// / (waves_in_range.len() as u64)
-            } else {
-                30
-            };
-            wave_data.push(data);
-        }
+        let wave_data = if wave.is_empty() {
+            self.prev_wave_data.clone().unwrap_or((0..21).map(|_| 0).collect())
+        } else {
+            wave.sort_by(|x, y| x.freq.total_cmp(&y.freq));
+            let wave = wave.iter();
+            let mut wave_data = vec![];
+            for low_bound in (0..20_0000).step_by(1000) {
+                let high_bound = low_bound + 1000;
+                let waves_in_range: Vec<u64> = wave
+                    .clone()
+                    .skip_while(|freq| (freq.freq as i32) < low_bound)
+                    .take_while(|freq| (freq.freq as i32) < high_bound)
+                    .map(|freq| (freq.volume * 100.0) as u64)
+                    .collect();
+
+                let data: u64 = if waves_in_range.len() > 0 {
+                    waves_in_range.iter().fold(0, |t, &x| t + x)// / (waves_in_range.len() as u64)
+                } else {
+                    30
+                };
+                wave_data.push(data);
+            }
+
+            if let Some(old_data) = &self.prev_wave_data {
+                for i in 0..old_data.len() {
+                    wave_data[i] = match wave_data[i].cmp(&old_data[i]) {
+                        Ordering::Equal => wave_data[i],
+                        // Ordering::Less => (old_data[i].checked_sub(2).unwrap_or(0)).max(wave_data[i]),
+                        // Ordering::Greater => (old_data[i] + 2).min(wave_data[i]),
+                        Ordering::Less => old_data[i] - ((old_data[i] - wave_data[i]) / 10),
+                        Ordering::Greater => old_data[i] + ((wave_data[i] - old_data[i]) / 10),
+                    };
+                }
+            }
+            self.prev_wave_data = Some(wave_data.clone());
+            wave_data
+        };
+
 
         let ma = wave_data.iter().max().unwrap();
         let mi = wave_data.iter().min().unwrap();
-        frame.render_widget(format!("{} | {mi} - {ma}", self.frame_num), stuff);
+        frame.render_widget(format!("{} | {mi} <-> {ma}", self.frame_num), stuff);
 
         frame.render_widget("BEEP BOOP".bold().into_centered_line(), title);
         frame.render_widget(get_visualiser(&self.config, &wave_data), visualiser);

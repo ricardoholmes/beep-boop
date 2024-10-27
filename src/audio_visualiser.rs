@@ -24,15 +24,16 @@ fn vertical_barchart(wave: &[u64]) -> BarChart {
 
     BarChart::default()
         .data(BarGroup::default().bars(&bars))
-        .max(50)
-        .bar_width(5)
+        .max(8000)
+        .bar_width(2)
         .bar_gap(1)
 }
 
 fn vertical_bar(amplitude: &u64) -> Bar {
-    let style = amplitude_style(*amplitude);
+    let amp = (*amplitude).max(50);
+    let style = amplitude_style(amp);
     Bar::default()
-        .value(*amplitude)
+        .value(amp)
         .style(style)
         .text_value(String::new())
 }
@@ -40,22 +41,23 @@ fn vertical_bar(amplitude: &u64) -> Bar {
 /// Create a horizontal bar chart from the wave data.
 fn horizontal_barchart(wave: &[u64]) -> BarChart {
     let bars: Vec<Bar> = wave
-        .iter().take(20)
+        .iter()
         .map(horizontal_bar)
         .collect();
 
     BarChart::default()
         .data(BarGroup::default().bars(&bars))
-        .max(50)
+        .max(8000)
         .bar_width(2)
         .bar_gap(1)
         .direction(Direction::Horizontal)
 }
 
 fn horizontal_bar(amplitude: &u64) -> Bar {
-    let style = amplitude_style(*amplitude);
+    let amp = (*amplitude).max(50);
+    let style = amplitude_style(amp);
     Bar::default()
-        .value(*amplitude)
+        .value(amp)
         .style(style)
         .text_value(String::new())
 }

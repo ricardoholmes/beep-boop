@@ -168,7 +168,7 @@ impl App {
 
         let ma = wave_data.iter().max().unwrap();
         let mi = wave_data.iter().min().unwrap();
-        frame.render_widget(format!("{} | {mi} <-> {ma} | {} | {} | {}", self.frame_num, buf.len(), wave_data.len(), self.start.elapsed().as_secs_f64() / total_dur.as_secs_f64()), stuff);
+        frame.render_widget(format!("{} | {mi} <-> {ma} | {} | {} | {:.01}%", self.frame_num, buf.len(), wave_data.len(), (self.start.elapsed().as_secs_f64() / total_dur.as_secs_f64()) * 100.0), stuff);
 
         let current_time = format!("{:02}:{:02}", self.start.elapsed().as_secs() / 60, self.start.elapsed().as_secs() % 60);
         let total_time = format!("{:02}:{:02}", total_dur.as_secs() / 60, total_dur.as_secs() % 60);
@@ -182,7 +182,7 @@ impl App {
 
         let progress_line = Gauge::default()
             .gauge_style(Color::Rgb(66, 134, 189))
-            .ratio((self.start.elapsed().as_secs_f64() / total_dur.as_secs_f64()).max(1.0));
+            .ratio((self.start.elapsed().as_secs_f64() / total_dur.as_secs_f64()).min(1.0));
         frame.render_widget(progress_line, progress_m);
 
         frame.render_widget("BEEP BOOP".bold().into_centered_line(), title);

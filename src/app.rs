@@ -1,25 +1,16 @@
-use crate::audio_visualiser;
+use crate::{audio_visualiser, lyrics::{self, get_lyric_at_time}};
 
 use audio_visualiser::get_visualiser;
 use color_eyre::Result;
 use ratatui::{
-    crossterm::event::{self, Event, KeyCode, KeyEventKind},
-    layout::{Constraint, Layout},
-    style::Stylize,
-    DefaultTerminal, Frame,
+    crossterm::event::{self, Event, KeyCode, KeyEventKind}, layout::{Constraint, Layout}, style::{Style, Stylize}, symbols, text::ToText, widgets::{Block, LineGauge}, DefaultTerminal, Frame
 };
-use ringbuf::traits::Consumer;
+use rodio::{Decoder, OutputStream, OutputStreamHandle, Source};
 
-use std::{cmp::Ordering, time::Duration};
+use std::{cmp::Ordering, fs::{self, File}, io::BufReader, path::PathBuf, thread::{self, JoinHandle, Thread}, time::{Duration, Instant}};
 
-use audioviz::spectrum::config::ProcessorConfig;
-use cpal::{Device, SampleFormat, Stream};
-use cpal::traits::DeviceTrait;
+use audioviz::spectrum::{config::ProcessorConfig, Frequency};
 
-use ringbuf::{
-    traits::{Producer, Split},
-    HeapRb,
-};
 
 use audioviz::spectrum;
 
@@ -29,9 +20,11 @@ pub struct Config {
 }
 
 pub struct App {
-    _input_stream: Stream,
+    audio_thread: JoinHandle<()>,
+    start: Instant,
+    lrc_parsed: Vec<(String, String)>,
+    sound_file: PathBuf,
     should_exit: bool,
-    get_buffer: Box<dyn FnMut() -> Vec<f32>>,
     processor_config: ProcessorConfig,
     config: Config,
     frame_num: u64,
@@ -39,70 +32,37 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(input_device: Device) -> Self {
-        // Configuration of audio STREAM
-        let mut supported_configs_range = input_device.supported_input_configs()
-            .expect("error while querying configs");
-        let supported_config = supported_configs_range.next()
-            .expect("no supported config?!")
-            .with_max_sample_rate();
-        // println!("Supported config: {:?}", supported_config);
-        // println!("Supported config.config: {:?}", supported_config.config());
+    pub fn new(sound_file: PathBuf, lrc_file: PathBuf) -> Self {
+        let lrc_contents = fs::read_to_string(lrc_file).unwrap();
+        let lrc_parsed = lyrics::parse_lrc_file(lrc_contents);
 
-        let err_fn = |err| eprintln!("an error occurred on the output audio stream: {}", err);
-        let _sample_format: SampleFormat = supported_config.sample_format();
-        let config: cpal::StreamConfig = supported_config.clone().into();
+        let snd_file = sound_file.clone();
+        let audio_thread = thread::spawn(move || {
+            // Get an output stream handle to the default physical sound device
+            let (_stream, stream_handle) = OutputStream::try_default().unwrap();
+            // Load a sound from a file, using a path relative to Cargo.toml
+            let file = BufReader::new(File::open(snd_file).unwrap());
+            // Decode that sound file into a source
+            let source = Decoder::new(file).unwrap();
 
-        // Create a delay in case the input and output devices aren't synced.
-        let latency_frames = (5000.0 / 1_000.0) * config.sample_rate.0 as f32;
-        let latency_samples = latency_frames as usize * config.channels as usize;
-        // The buffer to share samples
-        let ring = HeapRb::<f32>::new(latency_samples * 2);
-        let (mut producer, mut consumer) = ring.split();
+            let total_duration = source.total_duration().unwrap();
 
-        // Fill the samples with 0.0 equal to the length of the delay.
-        for _ in 0..latency_samples {
-            // The ring buffer has twice as much space as necessary to add latency here,
-            // so this should never fail
-            producer.try_push(0.0).unwrap();
-        }
+            // Play the sound directly on the device
+            let _ = stream_handle.play_raw(source.convert_samples());
+            
+            let start = Instant::now();
+            while start.elapsed() < total_duration { }
+        });
 
-        let input_data_fn = move |data: &[f32], _: &cpal::InputCallbackInfo| {
-            let mut output_fell_behind = false;
-            for &sample in data {
-                // println!("sample: {}", sample);
-                if producer.try_push(sample).is_err() {
-                    output_fell_behind = true;
-                }
-            }
-            if output_fell_behind {
-                eprintln!("output stream fell behind: try increasing latency");
-            }
-        };
+        let viz_config = ProcessorConfig::default();
+        // viz_config.sampling_rate = config.sample_rate.0;
 
-        let get_buffer_fn = move || {
-            let mut out = vec![];
-            while let Some(x) = consumer.try_pop() {
-                out.push(x);
-            }
-            out
-        };
-
-        // Build streams.
-        // println!(
-        //     "Attempting to build both streams with f32 samples and `{:?}`.",
-        //     config
-        // );
-        let input_stream = input_device.build_input_stream(&config, input_data_fn, err_fn, None).unwrap();
-
-        let mut viz_config = ProcessorConfig::default();
-        viz_config.sampling_rate = config.sample_rate.0;
-
-        let get_buffer = Box::new(get_buffer_fn);
         Self {
-            _input_stream: input_stream,
+            audio_thread,
+            start: Instant::now(),
+            lrc_parsed,
+            sound_file,
             should_exit: false,
-            get_buffer,
             processor_config: viz_config,
             config: Config {
                 is_horizontal: false,
@@ -140,27 +100,36 @@ impl App {
     }
 
     fn draw(&mut self, frame: &mut Frame) {
-        let [title, visualiser_area, stuff] = Layout::vertical([
+        let [title, lyrics_area, visualiser_area, progress_area, stuff] = Layout::vertical([
+                Constraint::Length(1),
                 Constraint::Length(1),
                 Constraint::Fill(1),
+                Constraint::Length(1),
                 Constraint::Length(1),
             ])
             .spacing(1)
             .areas(frame.area());
 
-        let buf = (self.get_buffer)();
-        let mut processor = spectrum::processor::Processor::from_raw_data(self.processor_config.clone(), buf);
+        let start = self.start.elapsed().max(Duration::from_millis(50)) - Duration::from_millis(50);
+        let dur = self.start.elapsed() - start;
+        let decoder = Decoder::new(BufReader::new(File::open(self.sound_file.clone()).unwrap())).unwrap();
+        let total_dur= decoder.total_duration().unwrap_or_default();
+        let data = decoder.convert_samples().skip_duration(start).take_duration(dur);
+        let buf: Vec<f32> = data.collect();
+
+        let mut processor = spectrum::processor::Processor::from_raw_data(self.processor_config.clone(), buf.clone());
         processor.raw_to_freq_buffer();
         let mut wave = processor.freq_buffer.clone();
 
         let wave_data = if wave.is_empty() {
-            self.prev_wave_data.clone().unwrap_or((0..21).map(|_| 0).collect())
+            // self.prev_wave_data.clone().unwrap_or((0..21).map(|_| 0).collect())
+            (0..21).map(|_| 0).collect()
         } else {
             wave.sort_by(|x, y| x.freq.total_cmp(&y.freq));
             let wave = wave.iter();
             let mut wave_data = vec![];
-            for low_bound in (0..20_0000).step_by(1000) {
-                let high_bound = low_bound + 1000;
+            for low_bound in (0..20_000).step_by(100) {
+                let high_bound = low_bound + 100;
                 let waves_in_range: Vec<u64> = wave
                     .clone()
                     .skip_while(|freq| (freq.freq as i32) < low_bound)
@@ -191,12 +160,36 @@ impl App {
             wave_data
         };
 
+        let mut x = vec![];
+        for low_bound in (0..20_000).step_by(1000) {
+            let high_bound = low_bound + 1000;
+            x.push(processor.freq_buffer.clone().iter().filter(|f| f.freq >= low_bound as f32 && f.freq < high_bound as f32).collect::<Vec<&Frequency>>().len())
+        }
 
         let ma = wave_data.iter().max().unwrap();
         let mi = wave_data.iter().min().unwrap();
-        frame.render_widget(format!("{} | {mi} <-> {ma}", self.frame_num), stuff);
+        frame.render_widget(format!("{} | {mi} <-> {ma} | {} | {} | {x:?}", self.frame_num, buf.len(), wave_data.len()), stuff);
+
+        let current_time = format!("{}:{}", self.start.elapsed().as_secs() / 60, self.start.elapsed().as_secs() % 60);
+        let total_time = format!("{}:{}", total_dur.as_secs() / 60, total_dur.as_secs() % 60);
+        let [progress_l, progress_m, progress_r] = Layout::horizontal([
+            Constraint::Percentage(10),
+            Constraint::Fill(1),
+            Constraint::Percentage(10),
+        ]).areas(progress_area);
+        frame.render_widget(current_time.to_text().centered(), progress_l);
+        frame.render_widget(total_time.to_text().centered(), progress_r);
+
+        let progress_line = LineGauge::default()
+            .block(Block::bordered().title("Progress"))
+            .filled_style(Style::new().white().on_black().bold())
+            .line_set(symbols::line::THICK)
+            .ratio((self.start.elapsed().as_secs_f64() / total_dur.as_secs_f64()).max(1.0));
+        frame.render_widget(progress_line, progress_m);
 
         frame.render_widget("BEEP BOOP".bold().into_centered_line(), title);
+        let lyric = get_lyric_at_time(&self.lrc_parsed, self.start.elapsed().as_secs()).unwrap_or_default();
+        frame.render_widget(lyric.to_text().centered(), lyrics_area);
 
         if self.config.is_stereo {
             if self.config.is_horizontal {

@@ -1,32 +1,44 @@
 mod app;
+mod lyrics;
 mod audio_visualiser;
 
 use app::App;
 use cpal::traits::{DeviceTrait, HostTrait};
-use std::io::{self, BufRead, Write};
+use rodio::{Decoder, OutputStream, Source};
+use std::{fs::File, io::{stdin, stdout, BufRead, BufReader, Write}, path::PathBuf};
 use color_eyre::Result;
+use clap::{command, Arg, ArgAction, Parser};
+
+#[derive(Parser, Debug)]
+#[command(version, about, long_about = None)]
+struct Cli {
+    sound_file: std::path::PathBuf,
+    lrc_file: std::path::PathBuf,
+}
 
 fn main() -> Result<()> {
-    let host = cpal::default_host();
+    let args = Cli::parse();
 
-    for (i, d) in host.input_devices().unwrap().enumerate() {
-        println!("{i}: {}", d.name().unwrap());
-    }
-    print!("\nDevice ID: ");
-    io::stdout().flush()?;
+    // let host = cpal::default_host();
 
-    let mut input = String::new();
-    io::stdin().lock().read_line(&mut input)?;
+    // for (i, d) in host.output_devices().unwrap().enumerate() {
+    //     println!("{i}: {}", d.name().unwrap());
+    // }
+    // print!("\nDevice ID: ");
+    // stdout().flush()?;
 
-    let device_id = input.trim_end().parse().unwrap();
+    // let mut input = String::new();
+    // stdin().lock().read_line(&mut input)?;
 
-    let input_device = host.input_devices().expect("no input device available").skip(device_id).next().unwrap();
+    // let device_id = input.trim_end().parse().unwrap();
 
-    println!("\nInput device: {}", input_device.name().unwrap());
+    // let output_device = host.output_devices()?.skip(device_id).next().expect("Invalid device");
+
+    // println!("\nOutput device: {}", output_device.name().unwrap());
 
     color_eyre::install()?;
     let terminal = ratatui::init();
-    let app_result = App::new(input_device).run(terminal);
+    let app_result = App::new(args.sound_file, args.lrc_file).run(terminal);
     ratatui::restore();
     app_result
 }

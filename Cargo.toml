@@ -13,3 +13,5 @@ ringbuf = "0.4.7"
 chrono = "0.4.38"
 lrc = "0.1.8"
 timer = "0.2.0"
+clap = { version = "4.5.20", features = ["derive"] }
+rodio = "0.19.0"

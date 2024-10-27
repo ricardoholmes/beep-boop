@@ -24,13 +24,13 @@ fn vertical_barchart(wave: &[u64]) -> BarChart {
 
     BarChart::default()
         .data(BarGroup::default().bars(&bars))
-        .max(8000)
-        .bar_width(2)
+        .max(600)
+        .bar_width(1)
         .bar_gap(1)
 }
 
 fn vertical_bar(amplitude: &u64) -> Bar {
-    let amp = (*amplitude).max(50);
+    let amp = (*amplitude).max(5);
     let style = amplitude_style(amp);
     Bar::default()
         .value(amp)
@@ -47,14 +47,14 @@ fn horizontal_barchart(wave: &[u64]) -> BarChart {
 
     BarChart::default()
         .data(BarGroup::default().bars(&bars))
-        .max(8000)
-        .bar_width(2)
+        .max(600)
+        // .bar_width(2)
         .bar_gap(1)
         .direction(Direction::Horizontal)
 }
 
 fn horizontal_bar(amplitude: &u64) -> Bar {
-    let amp = (*amplitude).max(50);
+    let amp = (*amplitude).max(5);
     let style = amplitude_style(amp);
     Bar::default()
         .value(amp)

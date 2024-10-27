@@ -61,11 +61,11 @@ pub fn parse_lrc_file(contents: String) -> Vec<(String, String)> {
 
         // Print the 2D array
         for entry in &lyrics_arr {
-            println!("{:?}", entry);
+            // println!("{:?}", entry);
         }
     }
     else {
-        println!("Marker [00:00.00] not found.");
+        panic!("Marker [00:00.00] not found.");
     }
 
     lyrics_arr

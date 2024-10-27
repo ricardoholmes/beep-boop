@@ -1,4 +1,3 @@
-use rand::{thread_rng, Rng};
 use ratatui::{
     layout::Direction,
     style::{Color, Style},
@@ -6,11 +5,6 @@ use ratatui::{
 };
 
 use crate::app::Config;
-
-pub fn get_wave() -> Vec::<u8> {
-    let mut rng = thread_rng();
-    (0..24).map(|_| rng.gen_range(50..90)).collect()
-}
 
 pub fn get_visualiser<'a>(config: &'a Config, wave_data: &'a [u64]) -> impl Widget + 'a  {
 
@@ -30,7 +24,9 @@ fn vertical_barchart(wave: &[u64]) -> BarChart {
 
     BarChart::default()
         .data(BarGroup::default().bars(&bars))
+        .max(50)
         .bar_width(5)
+        .bar_gap(1)
 }
 
 fn vertical_bar(amplitude: &u64) -> Bar {
@@ -50,8 +46,9 @@ fn horizontal_barchart(wave: &[u64]) -> BarChart {
 
     BarChart::default()
         .data(BarGroup::default().bars(&bars))
-        .bar_width(1)
-        .bar_gap(0)
+        .max(50)
+        .bar_width(2)
+        .bar_gap(1)
         .direction(Direction::Horizontal)
 }
 

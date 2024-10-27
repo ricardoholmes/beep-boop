@@ -1,6 +1,6 @@
 use crate::audio_visualiser;
 
-use audio_visualiser::{get_visualiser, get_wave};
+use audio_visualiser::get_visualiser;
 use color_eyre::Result;
 use ratatui::{
     crossterm::event::{self, Event, KeyCode, KeyEventKind},
@@ -8,14 +8,13 @@ use ratatui::{
     style::Stylize,
     DefaultTerminal, Frame,
 };
-use ringbuf::{storage::Heap, traits::Consumer, wrap::caching::Caching, Prod, SharedRb};
+use ringbuf::traits::Consumer;
 
-use std::{collections::HashSet, io::{BufRead, Write}, sync::Arc, time::Duration};
-use std::io;
+use std::time::Duration;
 
 use audioviz::spectrum::config::ProcessorConfig;
 use cpal::{Device, SampleFormat, Stream};
-use cpal::traits::{DeviceTrait, HostTrait};
+use cpal::traits::DeviceTrait;
 
 use ringbuf::{
     traits::{Producer, Split},
@@ -49,7 +48,7 @@ impl App {
         // println!("Supported config.config: {:?}", supported_config.config());
 
         let err_fn = |err| eprintln!("an error occurred on the output audio stream: {}", err);
-        let sample_format: SampleFormat = supported_config.sample_format();
+        let _sample_format: SampleFormat = supported_config.sample_format();
         let config: cpal::StreamConfig = supported_config.clone().into();
 
         // Create a delay in case the input and output devices aren't synced.
@@ -151,8 +150,6 @@ impl App {
         if wave.is_empty() {
             return;
         }
-        let ma = wave.iter().max_by(|x, y| x.volume.total_cmp(&y.volume)).unwrap().volume;
-        let mi = wave.iter().min_by(|x, y| x.volume.total_cmp(&y.volume)).unwrap().volume;
         // println!("{ma:?}, {mi:?}");
         // std::thread::sleep(Duration::from_secs(1));
         // panic!();
@@ -162,7 +159,12 @@ impl App {
         let mut wave_data = vec![];
         for low_bound in (0..20_0000).step_by(1000) {
             let high_bound = low_bound + 1000;
-            let waves_in_range: Vec<u64> = wave.clone().take_while(|freq| (freq.freq as i32) < high_bound).map(|freq| freq.volume as u64).collect();
+            let waves_in_range: Vec<u64> = wave
+                .clone()
+                .skip_while(|freq| (freq.freq as i32) < low_bound)
+                .take_while(|freq| (freq.freq as i32) < high_bound)
+                .map(|freq| freq.volume as u64)
+                .collect();
             
             let data: u64 = if waves_in_range.len() > 0 {
                 waves_in_range.iter().fold(0, |t, &x| t + x)// / (waves_in_range.len() as u64)
@@ -172,6 +174,8 @@ impl App {
             wave_data.push(data);
         }
 
+        let ma = wave_data.iter().max().unwrap();
+        let mi = wave_data.iter().min().unwrap();
         frame.render_widget(format!("{} | {mi} - {ma}", self.frame_num), stuff);
 
         frame.render_widget("BEEP BOOP".bold().into_centered_line(), title);

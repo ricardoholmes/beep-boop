@@ -25,6 +25,7 @@ use audioviz::spectrum;
 
 pub struct Config {
     pub is_horizontal: bool,
+    is_stereo: bool,
 }
 
 pub struct App {
@@ -104,7 +105,8 @@ impl App {
             get_buffer,
             processor_config: viz_config,
             config: Config {
-                is_horizontal: false
+                is_horizontal: false,
+                is_stereo: false,
             },
             frame_num: 0,
             prev_wave_data: None,
@@ -127,6 +129,7 @@ impl App {
                         match key.code {
                             KeyCode::Char('q') => self.should_exit = true,
                             KeyCode::Char('r') => self.config.is_horizontal = !self.config.is_horizontal,
+                            KeyCode::Char(' ') => self.config.is_stereo = !self.config.is_stereo,
                             _ => (),
                         }
                     }
@@ -137,13 +140,13 @@ impl App {
     }
 
     fn draw(&mut self, frame: &mut Frame) {
-        let [title, visualiser, stuff] = Layout::vertical([
-            Constraint::Length(1),
-            Constraint::Fill(1),
-            Constraint::Length(1),
-        ])
-        .spacing(1)
-        .areas(frame.area());
+        let [title, visualiser_area, stuff] = Layout::vertical([
+                Constraint::Length(1),
+                Constraint::Fill(1),
+                Constraint::Length(1),
+            ])
+            .spacing(1)
+            .areas(frame.area());
 
         let buf = (self.get_buffer)();
         let mut processor = spectrum::processor::Processor::from_raw_data(self.processor_config.clone(), buf);
@@ -194,7 +197,28 @@ impl App {
         frame.render_widget(format!("{} | {mi} <-> {ma}", self.frame_num), stuff);
 
         frame.render_widget("BEEP BOOP".bold().into_centered_line(), title);
-        frame.render_widget(get_visualiser(&self.config, &wave_data), visualiser);
+
+        if self.config.is_stereo {
+            if self.config.is_horizontal {
+                let [inner_layout_l, inner_layout_r] = Layout::horizontal([
+                    Constraint::Fill(1),
+                    Constraint::Fill(1),
+                ]).areas(visualiser_area);
+
+                frame.render_widget(get_visualiser(&self.config, &wave_data), inner_layout_l);
+                frame.render_widget(get_visualiser(&self.config, &wave_data), inner_layout_r);
+            } else {
+                let [inner_layout_u, inner_layout_d] = Layout::vertical([
+                    Constraint::Fill(1),
+                    Constraint::Fill(1),
+                ]).areas(visualiser_area);
+
+                frame.render_widget(get_visualiser(&self.config, &wave_data), inner_layout_u);
+                frame.render_widget(get_visualiser(&self.config, &wave_data), inner_layout_d);
+            }
+        } else {
+            frame.render_widget(get_visualiser(&self.config, &wave_data), visualiser_area);
+        }
 
         self.frame_num += 1;
     }
